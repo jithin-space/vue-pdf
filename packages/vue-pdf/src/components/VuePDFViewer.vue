@@ -4,13 +4,31 @@
       <div class="viewer-panel-top">
         <h1>top panel</h1>
       </div>
-      <div ref="_pagesContainer" class="page-container">
-        <!-- PDF pages will be rendered here -->
+      <div
+        ref="_pagesContainer"
+        class="page-container"
+        @scroll="onPagesContainerScroll"
+      >
+        <PageCanvas
+          v-for="pageNumber in totalPages"
+          :key="pageNumber"
+          :pageNumber="pageNumber"
+          :pdfDocument="_pdfDocument"
+          :scale="_scale || 1"
+          :maxScale="_maxScale"
+          :isVisible="_pagesVisible.has(pageNumber - 1)"
+          :minPage="_minPageNumber"
+          :maxPage="_maxPageNumber"
+        />
       </div>
       <div class="viewer-panel-bottom">
         <div class="paginator">
-          <button @click="onPaginatorPrev" :disabled="isPrevDisabled">prev</button>
-          <button @click="onPaginatorNext" :disabled="isNextDisabled">next</button>
+          <button @click="onPaginatorPrev" :disabled="isPrevDisabled">
+            prev
+          </button>
+          <button @click="onPaginatorNext" :disabled="isNextDisabled">
+            next
+          </button>
           <input
             type="number"
             v-model="inputPage"
@@ -23,10 +41,10 @@
         </div>
         <div class="panel-separator"></div>
         <div id="zoomer" class="subpanel">
-          <button>zoom out</button>
-          <button>zoom in</button>
-          <button>fit viewer</button>
-          <button>fit page</button>
+          <button @click="onZoomOut">zoom out</button>
+          <button @click="onZoomIn">zoom in</button>
+          <button @click="onZoomFitViewer">fit viewer</button>
+          <button @click="onZoomFitPage">fit page</button>
         </div>
       </div>
     </div>
@@ -37,45 +55,34 @@
   </div>
 </template>
 
-<script lang="ts" setup>
+<script setup lang="ts">
+import { onMounted, onUnmounted, ref, watch, computed, nextTick } from "vue";
 import { PDFDocumentLoadingTask, PDFDocumentProxy } from "pdfjs-dist";
-import { RenderParameters } from "pdfjs-dist/types/src/display/api";
-import {
-  onMounted,
-  onUnmounted,
-  ref,
-  watch,
-  toRaw,
-  computed,
-  nextTick,
-} from "vue";
-
-interface PageCanvas {
-  canvas: HTMLCanvasElement;
-  ctx: CanvasRenderingContext2D | null;
-  renderTask: { cancel: () => void } | null;
-  rendered: boolean;
-}
+import PageCanvas from "./Page.vue";
 
 const props = defineProps<{
   pdf?: PDFDocumentLoadingTask;
 }>();
-
 const loading = ref(false);
 
 // Private variables
 const _visibleAdjPages = 2;
+const _minScale = 0.25;
+const _maxScale = 4;
 const _pagesContainer = ref<HTMLDivElement | null>(null);
-const _pageCanvases = ref<PageCanvas[]>([]);
 const _pdfDocument = ref<PDFDocumentProxy | null>(null);
 const _pagesVisible = ref<Set<number>>(new Set());
 const _pageCurrent = ref<number>(0);
+const _scale = ref<number>(1);
+const _minPageNumber = ref<number>(0);
+const _maxPageNumber = ref<number>(0);
 
 const isPrevDisabled = computed(() => _pageCurrent.value <= 0);
 const isNextDisabled = computed(
   () => _pageCurrent.value >= (_pdfDocument.value?.numPages || 1) - 1
 );
 const currentPageNumber = computed(() => _pageCurrent.value + 1);
+const totalPages = computed(() => _pdfDocument.value?.numPages || 0);
 
 onMounted(async () => {
   if (props.pdf) await initDoc(props.pdf);
@@ -90,37 +97,10 @@ async function initDoc(proxy: PDFDocumentLoadingTask) {
 
 async function onPdfLoaded(doc: PDFDocumentProxy) {
   _pdfDocument.value = doc;
-  refreshPageCanvases();
-  await refreshPageView();
-}
-
-function refreshPageCanvases() {
-  _pageCanvases.value.forEach((x) => x.canvas.remove());
-  _pageCanvases.value = [];
-
-  const docPagesNumber = _pdfDocument.value?.numPages || 0;
-  if (!docPagesNumber) {
-    _pagesContainer.value?.removeEventListener(
-      "scroll",
-      onPagesContainerScroll
-    );
-    return;
-  }
-
-  for (let i = 0; i < docPagesNumber; i++) {
-    const canvas = document.createElement("canvas");
-    canvas.classList.add("page-canvas");
-    canvas.height = 500;
-    _pagesContainer.value?.append(canvas);
-    _pageCanvases.value.push({
-      canvas,
-      ctx: canvas.getContext("2d"),
-      rendered: false,
-      renderTask: null,
-    });
-  }
-
-  _pagesContainer.value?.addEventListener("scroll", onPagesContainerScroll);
+  nextTick(() => {
+    refreshPageView();
+  });
+  // await refreshPageView();
 }
 
 const onPagesContainerScroll = async () => {
@@ -132,39 +112,46 @@ const refreshPageView = async () => {
 
   _pagesVisible.value = getVisiblePages(
     _pagesContainer.value,
-    _pageCanvases.value
+    _pdfDocument.value?.numPages || 0
   );
   _pageCurrent.value = getCurrentPage(
     _pagesContainer.value,
-    _pageCanvases.value,
     _pagesVisible.value
   );
 
-  console.log(_pagesVisible.value, _pageCurrent.value, "onrefreshPageview");
-
-  await renderVisiblePagesAsync();
+  _minPageNumber.value = Math.max(
+    Math.min(..._pagesVisible.value) - _visibleAdjPages,
+    1
+  );
+  _maxPageNumber.value = Math.min(
+    Math.max(..._pagesVisible.value) + _visibleAdjPages,
+    _pdfDocument.value?.numPages || 1
+  );
+  // console.log(_pagesVisible.value, _pageCurrent.value, "onrefresh");
 };
 
 function getVisiblePages(
   container: HTMLDivElement,
-  pageCanvases: PageCanvas[]
+  totalPages: number
 ): Set<number> {
   const cRect = container.getBoundingClientRect();
   const pagesVisible = new Set<number>();
 
-  pageCanvases.forEach((x, i) => {
-    const pRect = x.canvas.getBoundingClientRect();
-    if (pRect.top < cRect.bottom && pRect.bottom > cRect.top) {
-      pagesVisible.add(i);
+  for (let i = 0; i < totalPages; i++) {
+    const pageElement = container.children[i];
+    // console.log(pageElement, "pagee");
+    if (pageElement) {
+      const pRect = pageElement.getBoundingClientRect();
+      if (pRect.top < cRect.bottom && pRect.bottom > cRect.top) {
+        pagesVisible.add(i);
+      }
     }
-  });
+  }
 
   return pagesVisible;
 }
-
 function getCurrentPage(
   container: HTMLDivElement,
-  pageCanvases: PageCanvas[],
   visiblePages: Set<number>
 ): number {
   const visiblePageNumbers = [...visiblePages];
@@ -177,94 +164,33 @@ function getCurrentPage(
 
   // Iterate over visible pages to find the one that covers the largest area
   visiblePageNumbers.forEach((pageIndex) => {
-    const pageRect = pageCanvases[pageIndex].canvas.getBoundingClientRect();
+    const pageElement = container.children[pageIndex];
+    if (pageElement) {
+      const pageRect = pageElement.getBoundingClientRect();
 
-    // Calculate the overlapping area between the page and the container
-    const overlapTop = Math.max(
-      0,
-      Math.min(pageRect.bottom, containerRect.bottom) -
-        Math.max(pageRect.top, containerRect.top)
-    );
-    const overlapLeft = Math.max(
-      0,
-      Math.min(pageRect.right, containerRect.right) -
-        Math.max(pageRect.left, containerRect.left)
-    );
+      // Calculate the overlapping area between the page and the container
+      const overlapTop = Math.max(
+        0,
+        Math.min(pageRect.bottom, containerRect.bottom) -
+          Math.max(pageRect.top, containerRect.top)
+      );
+      const overlapLeft = Math.max(
+        0,
+        Math.min(pageRect.right, containerRect.right) -
+          Math.max(pageRect.left, containerRect.left)
+      );
 
-    if (overlapTop > 0 && overlapLeft > 0) {
-      const overlapArea = overlapTop * overlapLeft; // Area of overlap between page and container
-      if (overlapArea > maxArea) {
-        maxArea = overlapArea;
-        selectedPage = pageIndex;
+      if (overlapTop > 0 && overlapLeft > 0) {
+        const overlapArea = overlapTop * overlapLeft; // Area of overlap between page and container
+        if (overlapArea > maxArea) {
+          maxArea = overlapArea;
+          selectedPage = pageIndex;
+        }
       }
     }
   });
 
   return selectedPage;
-}
-
-async function renderVisiblePagesAsync() {
-  if (!_pdfDocument.value) return;
-  const doc = _pdfDocument.value;
-
-  const pageCanvases = _pageCanvases.value;
-  const visiblePages = _pagesVisible.value;
-
-  const minPage = Math.max(Math.min(...visiblePages) - _visibleAdjPages, 0);
-  const maxPage = Math.min(
-    Math.max(...visiblePages) + _visibleAdjPages,
-    pageCanvases.length - 1
-  );
-
-  for (let i = 0; i < pageCanvases.length; i++) {
-    if (i >= minPage && i <= maxPage) {
-      if (!pageCanvases[i].rendered)
-        await renderPageAsync(doc, pageCanvases, i);
-    } else if (pageCanvases[i].rendered) {
-      clearRenderedPage(pageCanvases, i);
-    }
-  }
-}
-
-async function renderPageAsync(
-  doc: PDFDocumentProxy,
-  pageCanvases: PageCanvas[],
-  pageNumber: number,
-  scale = 1
-) {
-  const pageCanvas = pageCanvases[pageNumber];
-  if (pageCanvas.renderTask || !pageCanvas.ctx) return;
-
-  const page = await toRaw(doc).getPage(pageNumber + 1);
-  const viewport = page.getViewport({ scale });
-  pageCanvas.canvas.width = viewport.width;
-  pageCanvas.canvas.height = viewport.height;
-
-  if (!pageCanvas.renderTask) {
-    // create new render task only if there is no pending one
-    const params = <RenderParameters>{
-      canvasContext: pageCanvas.ctx,
-      viewport,
-    };
-    const renderTask = page.render(params);
-    pageCanvas.renderTask = renderTask;
-    await renderTask.promise;
-    pageCanvas.renderTask = null;
-    pageCanvas.rendered = true;
-  }
-}
-
-function clearRenderedPage(pageCanvases: PageCanvas[], pageNumber: number) {
-  const pageCanvas = pageCanvases[pageNumber];
-  if (pageCanvas.ctx) {
-    pageCanvas.ctx.clearRect(
-      0,
-      0,
-      pageCanvas.canvas.width,
-      pageCanvas.canvas.height
-    );
-  }
-  pageCanvas.rendered = false;
 }
 
 const onChange = () => {
@@ -290,10 +216,9 @@ const onChange = () => {
 };
 
 function scrollToPage(pageNumber: number) {
-  console.log("pg", pageNumber);
   const { top: cTop } = _pagesContainer.value.getBoundingClientRect();
   const { top: pTop } =
-    _pageCanvases.value[pageNumber].canvas.getBoundingClientRect();
+    _pagesContainer.value.children[pageNumber].getBoundingClientRect();
 
   const scroll = pTop - (cTop - _pagesContainer.value.scrollTop);
   _pagesContainer.value.scrollTo(0, scroll);
@@ -325,11 +250,63 @@ function onPaginatorNext() {
   }
 }
 
+function onZoomOut() {
+  _scale.value = clamp(_scale.value / 2, _minScale, _maxScale);
+  // refreshPageView()
+  // _scale.value = 1;
+  nextTick(() => refreshPageView());
+}
+
+function onZoomIn() {
+  _scale.value = clamp(_scale.value * 2, _minScale, _maxScale);
+  nextTick(() => refreshPageView());
+}
+
+function onZoomFitPage() {
+  if (
+    !_pagesContainer.value ||
+    !_pdfDocument.value ||
+    !_pagesVisible.value.size
+  ) {
+    return;
+  }
+
+  const { width: cWidth, height: cHeight } =
+    _pagesContainer.value.getBoundingClientRect();
+  const { width: pWidth, height: pHeight } =
+    _pagesContainer.value.children[_pageCurrent.value].getBoundingClientRect();
+  const hScale = clamp(((cWidth - 20) / pWidth) * _scale.value, 0.1, _maxScale);
+  const vScale = clamp(
+    ((cHeight - 20) / pHeight) * _scale.value,
+    0.1,
+    _maxScale
+  );
+  _scale.value = Math.min(hScale, vScale);
+  nextTick(() => refreshPageView());
+}
+
+function onZoomFitViewer() {
+  if (
+    !_pagesContainer.value ||
+    !_pdfDocument.value ||
+    !_pagesVisible.value.size
+  ) {
+    return;
+  }
+
+  const cWidth = _pagesContainer.value.getBoundingClientRect().width;
+  const pWidth =
+    _pagesContainer.value.children[_pageCurrent.value].getBoundingClientRect()
+      .width;
+  const scale = clamp(((cWidth - 20) / pWidth) * _scale.value, 0.1, _maxScale);
+  _scale.value = scale;
+  nextTick(() => refreshPageView());
+}
+
 function clamp(v, min, max) {
   return Math.max(min, Math.min(v, max));
 }
 
-// Life cycle
 onUnmounted(() => {
   if (props.pdf && !props.pdf.destroyed) {
     props.pdf.destroy();
@@ -342,6 +319,9 @@ watch(
     if (pdf) initDoc(pdf);
   }
 );
+watch(_pageCurrent, (newVal) => {
+  inputPage.value = newVal + 1;
+});
 </script>
 
 <style scoped>
@@ -419,12 +399,6 @@ watch(
 .panels-hidden .page-container {
   padding-top: 40px;
   transition: padding-top 0.25s ease-in 0.1s;
-}
-
-::v-deep(.page-canvas) {
-  margin: 10px;
-  box-shadow: 0 0 10px rgba(0, 0, 0, 0.75);
-  background-color: white;
 }
 
 /* paginator */
