@@ -6,15 +6,7 @@
 
 <script setup lang="ts">
 import { PDFPageProxy } from "pdfjs-dist";
-import {
-  onMounted,
-  ref,
-  watch,
-  toRaw,
-  watchEffect,
-  render,
-  onUnmounted,
-} from "vue";
+import { onMounted, ref, watch, toRaw, onUnmounted } from "vue";
 
 const props = defineProps({
   pageNumber: {
@@ -24,10 +16,6 @@ const props = defineProps({
   pdfDocument: {
     type: Object,
     required: true,
-  },
-  isVisible: {
-    type: Boolean,
-    default: false,
   },
   scale: {
     type: Number,
@@ -47,19 +35,30 @@ const props = defineProps({
   },
 });
 
+
 const _scale = ref(props.scale);
-const _maxScale = ref(props.maxScale);
 const _size = ref({ width: 0, height: 0 });
-const canvasRef = ref(null);
-const containerRef = ref(null);
+const canvasRef = ref<HTMLCanvasElement | null>(null);
+const containerRef = ref<HTMLDivElement | null>(null);
 const _pageProxy = ref<PDFPageProxy | null>(null);
-const ctx = ref(null);
+const ctx = ref<CanvasRenderingContext2D | null>(null);
 const rendered = ref(false);
 const renderTask = ref<{ cancel: () => void } | null>(null);
 const _renderedCanvas = ref<HTMLCanvasElement | null>(null);
 
 onMounted(async () => {
-  ctx.value = canvasRef.value.getContext("2d");
+  if (canvasRef.value) {
+    ctx.value = canvasRef.value.getContext("2d");
+  }
+});
+
+onUnmounted(() => {
+  if (_pageProxy.value) {
+    _pageProxy.value.cleanup();
+  }
+  if (renderTask.value) {
+    renderTask.value.cancel();
+  }
 });
 
 watch(
@@ -68,21 +67,8 @@ watch(
     if (!newPdfDocument) return;
     if (!_pageProxy.value) {
       _pageProxy.value = await toRaw(newPdfDocument).getPage(props.pageNumber);
-      const viewport = _pageProxy.value.getViewport({ scale: 1 });
-      _size.value = { width: viewport.width, height: viewport.height };
-      const width = _size.value.width;
-      const height = _size.value.height;
-      containerRef.value.style.width = width + "px";
-      containerRef.value.style.height = height + "px";
-      canvasRef.value.style.width = width + "px";
-      canvasRef.value.style.height = height + "px";
-
-      const dpr = window.devicePixelRatio;
-      canvasRef.value.width = width * dpr;
-      canvasRef.value.height = height * dpr;
+      initializeCanvas();
     }
-
-    //  console.log(props.pageNumber, "onEffect", _pageProxy.value);
   },
   { immediate: true } // Run on initial setup
 );
@@ -93,32 +79,19 @@ watch(
     if (!newProxy) return;
     if (props.pageNumber >= newMinPage && props.pageNumber <= newMaxPage) {
       if (!rendered.value) {
-        // console.log('rendering', props.pageNumber, props.minPage, props.maxPage);
         await renderPage(); // Avoid `await` if renderPage isn't returning a promise.
       }
     } else {
-      clear();
+      clearCanvas();
     }
   }
 );
 
 watch(
   () => props.scale,
-  (newScale, oldScale) => {
-    console.log(newScale, _scale.value, oldScale, "onScale");
-
+  (newScale) => {
     _scale.value = newScale;
-    const width = _size.value.width * _scale.value;
-    const height = _size.value.height * _scale.value;
-    containerRef.value.style.width = width + "px";
-    containerRef.value.style.height = height + "px";
-    canvasRef.value.style.width = width + "px";
-    canvasRef.value.style.height = height + "px";
-
-    const dpr = window.devicePixelRatio;
-    canvasRef.value.width = width * dpr;
-    canvasRef.value.height = height * dpr;
-
+    resizeCanvas();
     if (rendered.value) {
       rendered.value = false;
       _renderedCanvas.value = null;
@@ -127,9 +100,41 @@ watch(
   }
 );
 
-onUnmounted(() => {
-  _pageProxy.value?.cleanup();
-});
+function initializeCanvas() {
+  if (!_pageProxy.value || !containerRef.value || !canvasRef.value) return;
+
+  const viewport = _pageProxy.value.getViewport({ scale: 1 });
+  _size.value = { width: viewport.width, height: viewport.height };
+  const width = _size.value.width;
+  const height = _size.value.height;
+  containerRef.value.style.width = width + "px";
+  containerRef.value.style.height = height + "px";
+  canvasRef.value.style.width = width + "px";
+  canvasRef.value.style.height = height + "px";
+
+  const dpr = window.devicePixelRatio;
+  canvasRef.value.width = width * dpr;
+  canvasRef.value.height = height * dpr;
+}
+
+function resizeCanvas() {
+  const width = _size.value.width * _scale.value;
+  const height = _size.value.height * _scale.value;
+
+  if (containerRef.value) {
+    containerRef.value.style.width = `${width}px`;
+    containerRef.value.style.height = `${height}px`;
+  }
+
+  if (canvasRef.value) {
+    canvasRef.value.style.width = `${width}px`;
+    canvasRef.value.style.height = `${height}px`;
+
+    const dpr = window.devicePixelRatio;
+    canvasRef.value.width = width * dpr;
+    canvasRef.value.height = height * dpr;
+  }
+}
 
 async function renderPage() {
   if (!_pageProxy.value) return;
@@ -140,10 +145,8 @@ async function renderPage() {
   }
 
   if (!_renderedCanvas.value) {
-    console.log("rendinrg", props.pageNumber, _pageProxy.value);
-
     const viewport = _pageProxy.value.getViewport({
-      scale: _maxScale.value * window.devicePixelRatio,
+      scale: props.maxScale * window.devicePixelRatio,
     });
     // _size.value = { width: viewport.width, height: viewport.height };
     canvasRef.value.width = viewport.width;
@@ -165,7 +168,7 @@ async function renderPage() {
 function drawDownscaled() {
   if (!_renderedCanvas.value) return;
 
-  let ratio = _scale.value / _maxScale.value;
+  let ratio = _scale.value / props.maxScale;
   let tempSource = _renderedCanvas.value;
   let tempTarget: HTMLCanvasElement;
 
@@ -182,7 +185,6 @@ function drawDownscaled() {
     ratio *= 2;
   }
 
-
   ctx.value.drawImage(
     tempSource,
     0,
@@ -192,8 +194,8 @@ function drawDownscaled() {
   );
 }
 
-function clear() {
-  if (ctx.value) {
+function clearCanvas() {
+  if (ctx.value && canvasRef.value) {
     ctx.value.clearRect(0, 0, canvasRef.value.width, canvasRef.value.height);
     rendered.value = false;
     _renderedCanvas.value = null;

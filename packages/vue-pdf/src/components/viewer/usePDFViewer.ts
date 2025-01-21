@@ -2,7 +2,7 @@
 import * as PDFJS from "pdfjs-dist";
 import PDFWorker from "pdfjs-dist/build/pdf.worker.min?url";
 import type { Ref } from "vue";
-import type { PDFSrc } from "./types";
+import type { PDFSrc } from "../types";
 import { isRef, shallowRef, watch } from "vue";
 import type { PDFDocumentLoadingTask } from "pdfjs-dist";
 
