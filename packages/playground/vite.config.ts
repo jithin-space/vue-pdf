@@ -1,6 +1,6 @@
-import { resolve } from 'node:path';
-import { defineConfig, mergeConfig } from 'vite';
-import commonConfig from '../../vite.config';
+import { resolve } from "node:path";
+import { defineConfig, mergeConfig } from "vite";
+import commonConfig from "../../vite.config";
 
 export default mergeConfig(
   commonConfig,

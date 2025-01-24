@@ -1,7 +1,17 @@
 <template>
   <div>
     <div class="viewer-container">
-      <TopPanel />
+      <TopPanel
+        :currentPage="_pageState.current"
+        :totalPages="_pageState.totalPages"
+        :scrollToPage="scrollToPage"
+        :onZoomFitPage="onZoomFitPage"
+        :onZoomFitViewer="onZoomFitViewer"
+        :onZoomIn="onZoomIn"
+        :onZoomOut="onZoomOut"
+        :onSetZoom="onSetZoom"
+        :scale="_pageState.scale"
+      />
       <div
         ref="_pagesContainer"
         class="page-container"
@@ -18,7 +28,7 @@
           :maxPage="_pageState.max"
         />
       </div>
-      <BottomPanel
+      <!-- <BottomPanel
         :currentPage="_pageState.current"
         :totalPages="_pageState.totalPages"
         :scrollToPage="scrollToPage"
@@ -26,7 +36,7 @@
         :onZoomFitViewer="onZoomFitViewer"
         :onZoomIn="onZoomIn"
         :onZoomOut="onZoomOut"
-      />
+      /> -->
     </div>
     <div v-if="loading" ref="loadingLayer">
       <h1>currentPage: {{ _pageState.current }}</h1>
@@ -42,6 +52,7 @@ import PageCanvas from "./Page.vue";
 import TopPanel from "./TopPanel.vue";
 import BottomPanel from "./BottomPanel.vue";
 import _ from "lodash"; // TODO: can be replaced with vueuse
+import "@shoelace-style/shoelace/dist/components/input/input.js";
 
 const props = defineProps<{
   pdf?: PDFDocumentLoadingTask | null;
@@ -186,14 +197,26 @@ function scrollToPage(pageNumber: number) {
     _pagesContainer.value.scrollTo(0, scroll);
   }
 }
+function getValidZoomLevel(value: number): number {
+  return Math.round(value * 4) / 4;  // Rounds to nearest 0.25 increment
+}
+
+function onSetZoom(value) {
+  _pageState.scale = value;
+  nextTick(() => refreshPageView());
+}
 
 function onZoomOut() {
-  _pageState.scale = clamp(_pageState.scale / 2, _minScale, _maxScale);
+  let newScale = _pageState.scale - 0.25;
+  newScale = clamp(newScale, _minScale, _maxScale);
+  _pageState.scale = getValidZoomLevel(newScale);
   nextTick(() => refreshPageView());
 }
 
 function onZoomIn() {
-  _pageState.scale = clamp(_pageState.scale * 2, _minScale, _maxScale);
+  let newScale = _pageState.scale + 0.25;
+  newScale = clamp(newScale, _minScale, _maxScale);
+  _pageState.scale = getValidZoomLevel(newScale); 
   nextTick(() => refreshPageView());
 }
 
@@ -280,7 +303,7 @@ watch(
   bottom: 0;
   right: 0;
   padding-top: 0;
-  background-color: gray;
+  
 }
 
 .page-container {
@@ -295,6 +318,7 @@ watch(
   overflow-x: auto;
   overflow-y: auto;
   transition: padding-top 0.25s ease-out 0.1s;
+  background-color: grey;
 }
 .panels-hidden .page-container {
   padding-top: 40px;

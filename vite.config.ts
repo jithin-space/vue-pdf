@@ -15,5 +15,12 @@ export default defineConfig({
       '@samples': resolve(__dirname, 'samples'),
     },
   },
-  plugins: [vue()],
+  plugins: [vue({
+    template: {
+      compilerOptions: {
+        // treat all tags with a dash as custom elements
+        isCustomElement: (tag) => tag.includes('-')
+      }
+    }
+  })],
 })
