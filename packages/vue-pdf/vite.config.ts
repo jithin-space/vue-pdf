@@ -1,27 +1,27 @@
-import { resolve } from 'node:path'
-import { defineConfig, mergeConfig } from 'vite'
-import commonConfig from '../../vite.config'
-
+import { resolve } from "node:path";
+import { defineConfig, mergeConfig } from "vite";
+import commonConfig from "../../vite.config";
 // https://vitejs.dev/config/
 export default mergeConfig(
   commonConfig,
   defineConfig({
     build: {
       lib: {
-        entry: resolve(__dirname, './src/index.ts'),
-        name: '@tato30/vue-pdf',
-        fileName: 'index',
+        entry: resolve(__dirname, "./src/index.ts"),
+        name: "@tato30/vue-pdf",
+        fileName: "index",
       },
       rollupOptions: {
-        external: ['vue', 'pdfjs-dist'],
+        external: ["vue", "pdfjs-dist", "@shoelace-style/shoelace"],
         output: {
-          exports: 'named',
+          exports: "named",
           globals: {
-            'vue': 'vue',
-            'pdfjs-dist': 'PDFJS',
+            vue: "vue",
+            "pdfjs-dist": "PDFJS",
+            "@shoelace-style/shoelace": "Shoelace",
           },
         },
       },
     },
-  }),
-)
+  })
+);

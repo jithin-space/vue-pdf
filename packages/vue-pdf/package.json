@@ -47,6 +47,7 @@
     "vue": "^3.2.33"
   },
   "dependencies": {
+    "@shoelace-style/shoelace": "^2.19.1",
     "pdfjs-dist": "4.9.124"
   },
   "devDependencies": {
