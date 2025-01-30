@@ -1,5 +1,5 @@
 <template>
-  <div ref="containerRef" class="page">
+  <div ref="containerRef" class="page" :data-loaded="rendered">
     <canvas ref="canvasRef" class="page-canvas" height="500"></canvas>
   </div>
 </template>
