@@ -16,6 +16,8 @@
         ref="_pagesContainer"
         class="page-container"
         @scroll="onPagesContainerScroll"
+        @mousemove="onPagesContainerMouseMove"
+        @wheel="onPagesContainerWheel"
       >
         <PageCanvas
           v-for="pageNumber in _pageState.totalPages"
@@ -26,6 +28,7 @@
           :maxScale="_maxScale"
           :minPage="_pageState.min"
           :maxPage="_pageState.max"
+          :data-page-number="pageNumber"
         />
       </div>
       <!-- <BottomPanel
@@ -46,13 +49,20 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, watch, nextTick, reactive } from "vue";
+import { onMounted, onUnmounted, ref, watch, nextTick, reactive, toRaw } from "vue";
 import { PDFDocumentLoadingTask, PDFDocumentProxy } from "pdfjs-dist";
 import PageCanvas from "./Page.vue";
 import TopPanel from "./TopPanel.vue";
 import BottomPanel from "./BottomPanel.vue";
-import _ from "lodash"; // TODO: can be replaced with vueuse
+import _, { set } from "lodash"; // TODO: can be replaced with vueuse
 import "@shoelace-style/shoelace/dist/components/input/input.js";
+
+interface Position {
+  clientX: number;
+  clientY: number;
+  containerX: number;
+  containerY: number;
+}
 
 const props = defineProps<{
   pdf?: PDFDocumentLoadingTask | null;
@@ -100,9 +110,38 @@ async function onPdfLoaded(doc: PDFDocumentProxy) {
   // await refreshPageView();
 }
 
-const onPagesContainerScroll = _.debounce(async () => {
+const onPagesContainerScroll = async () => {
   await refreshPageView();
-}, 10);
+};
+
+const mousePos = ref<Position>({
+  clientX: 0,
+  clientY: 0,
+  containerX: 0,
+  containerY: 0,
+});
+
+const onPagesContainerMouseMove = (event: MouseEvent) => {
+  if (!_pagesContainer.value) return;
+
+  const { clientX, clientY } = event;
+  const { x: rectX, y: rectY } = _pagesContainer.value.getBoundingClientRect();
+  const containerX = clientX - rectX;
+  const containerY = clientY - rectY;
+
+  mousePos.value = { clientX, clientY, containerX, containerY };
+};
+
+const onPagesContainerWheel = (event: WheelEvent) => {
+  if (event.ctrlKey) {
+    event.preventDefault();
+    if (event.deltaY > 0) {
+      zoomOut(mousePos.value);
+    } else {
+      zoomIn(mousePos.value);
+    }
+  }
+};
 
 const refreshPageView = async () => {
   if (!_pagesContainer.value) return;
@@ -120,7 +159,7 @@ const refreshPageView = async () => {
   );
   _pageState.visiblePages = new Set(visiblePages);
 
-  // console.log(_pagesVisible.value, _pageCurrent.value, "onrefresh");
+  // console.log(_pageState.current, toRaw(_pageState), "onrefresh");
 };
 
 function getVisiblePages(
@@ -197,27 +236,69 @@ function scrollToPage(pageNumber: number) {
     _pagesContainer.value.scrollTo(0, scroll);
   }
 }
-function getValidZoomLevel(value: number): number {
-  return Math.round(value * 4) / 4;  // Rounds to nearest 0.25 increment
-}
 
-function onSetZoom(value) {
-  _pageState.scale = value;
+function setScale(value: number, cursorPosition: Position | null = null) {
+  if (!_pagesContainer.value) return;
+
+  let container = _pagesContainer.value;
+  let prevScale = _pageState.scale;
+  let newScale = clamp(value, _minScale, _maxScale);
+  let scaleFactor = newScale / prevScale;
+
+  if (cursorPosition) {
+    const { clientX, clientY } = cursorPosition;
+    const { left: cLeft, top: cTop } = container.getBoundingClientRect();
+
+    // Compute the position of the cursor relative to the container
+    let offsetX = clientX - cLeft;
+    let offsetY = clientY - cTop;
+
+    // Compute new scroll positions to keep cursor fixed
+    let newScrollLeft = container.scrollLeft * scaleFactor + offsetX * (scaleFactor - 1);
+    let newScrollTop = container.scrollTop * scaleFactor + offsetY * (scaleFactor - 1);
+
+    // Update scale
+    _pageState.scale = newScale;
+
+    // Immediately apply scroll correction
+    nextTick(() => {
+      container.scrollLeft = newScrollLeft;
+      container.scrollTop = newScrollTop;
+    });
+
+    return;
+  }
+
+  // If no cursor position is provided, just update scale
+  _pageState.scale = newScale;
   nextTick(() => refreshPageView());
 }
 
-function onZoomOut() {
+function getValidZoomLevel(value: number): number {
+  return Math.round(value * 4) / 4; // Rounds to nearest 0.25 increment
+}
+
+function onSetZoom(value: number) {
+  setScale(value);
+}
+
+function zoomOut(cursorPosition: Position | null = null) {
   let newScale = _pageState.scale - 0.25;
   newScale = clamp(newScale, _minScale, _maxScale);
-  _pageState.scale = getValidZoomLevel(newScale);
-  nextTick(() => refreshPageView());
+  setScale(getValidZoomLevel(newScale), cursorPosition);
+}
+
+function zoomIn(cursorPosition: Position | null = null) {
+  let newScale = _pageState.scale + 0.25;
+  newScale = clamp(newScale, _minScale, _maxScale);
+  setScale(getValidZoomLevel(newScale), cursorPosition);
+}
+function onZoomOut() {
+  zoomOut(mousePos.value);
 }
 
 function onZoomIn() {
-  let newScale = _pageState.scale + 0.25;
-  newScale = clamp(newScale, _minScale, _maxScale);
-  _pageState.scale = getValidZoomLevel(newScale); 
-  nextTick(() => refreshPageView());
+  zoomIn(mousePos.value);
 }
 
 function onZoomFitPage() {
@@ -243,8 +324,7 @@ function onZoomFitPage() {
     0.1,
     _maxScale
   );
-  _pageState.scale = Math.min(hScale, vScale);
-  nextTick(() => refreshPageView());
+  setScale(Math.min(hScale, vScale));
 }
 
 function onZoomFitViewer() {
@@ -265,8 +345,7 @@ function onZoomFitViewer() {
     0.1,
     _maxScale
   );
-  _pageState.scale = scale;
-  nextTick(() => refreshPageView());
+  setScale(scale);
 }
 
 function clamp(v: number, min: number, max: number) {
@@ -303,7 +382,6 @@ watch(
   bottom: 0;
   right: 0;
   padding-top: 0;
-  
 }
 
 .page-container {
