@@ -3,6 +3,14 @@
     <!-- Paginator Component -->
     <div class="viewer-panel-top-container">
       <div class="toolbar-start">
+        <sl-button
+          @click="togglePreview"
+          :variant="showPreview ? 'default' : 'text'"
+          size="medium"
+          :circle="showPreview"
+        >
+          <sl-icon name="window-sidebar"></sl-icon>
+        </sl-button>
         <Paginator
           :currentPage="currentPage"
           :totalPages="totalPages"
@@ -69,7 +77,17 @@ const props = defineProps({
     type: Number,
     required: true,
   },
+  showPreview: {
+    type: Boolean,
+    required: true,
+  },
 });
+
+const emit = defineEmits(["togglePreview"]);
+
+const togglePreview = () => {
+  emit("togglePreview");
+};
 
 // Methods
 function onPaginatorPrev() {
@@ -100,6 +118,7 @@ function onChangePage(pageNumber: number) {
   align-items: center;
   background-color: var(--sl-color-neutral-200);
   padding-top: 2px;
+  z-index: 5;
 }
 .viewer-panel-top-container {
   display: grid;
