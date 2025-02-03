@@ -11,25 +11,37 @@
         :onZoomOut="onZoomOut"
         :onSetZoom="onSetZoom"
         :scale="_pageState.scale"
+        :showPreview="showPreviewPanel"
+        @togglePreview="togglePreviewPanel"
       />
-      <div
-        ref="_pagesContainer"
-        class="page-container"
-        @scroll="onPagesContainerScroll"
-        @mousemove="onPagesContainerMouseMove"
-        @wheel="onPagesContainerWheel"
-      >
-        <PageCanvas
-          v-for="pageNumber in _pageState.totalPages"
-          :key="pageNumber"
-          :pageNumber="pageNumber"
+      <div class="content-container">
+        <PagePreviewPanel
+          :showPreview="showPreviewPanel"
+          :totalPages="_pageState.totalPages"
+          :currentPage="_pageState.current"
+          :scrollToPage="scrollToPage"
           :pdfDocument="_pdfDocument"
-          :scale="_pageState.scale || 1"
-          :maxScale="_maxScale"
-          :minPage="_pageState.min"
-          :maxPage="_pageState.max"
-          :data-page-number="pageNumber"
         />
+        <div
+          ref="_pagesContainer"
+          class="page-container"
+          @scroll="onPagesContainerScroll"
+          @mousemove="onPagesContainerMouseMove"
+          @wheel="onPagesContainerWheel"
+        >
+          <PageCanvas
+            v-for="pageNumber in _pageState.totalPages"
+            :key="pageNumber"
+            :pageNumber="pageNumber"
+            :pdfDocument="_pdfDocument"
+            :scale="_pageState.scale || 1"
+            :maxScale="_maxScale"
+            :minPage="_pageState.min"
+            :maxPage="_pageState.max"
+            :data-page-number="pageNumber"
+            :is-thumbnail="false"
+          />
+        </div>
       </div>
       <!-- <BottomPanel
         :currentPage="_pageState.current"
@@ -49,13 +61,28 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, watch, nextTick, reactive, toRaw } from "vue";
+import {
+  onMounted,
+  onUnmounted,
+  ref,
+  watch,
+  nextTick,
+  reactive,
+  toRaw,
+} from "vue";
 import { PDFDocumentLoadingTask, PDFDocumentProxy } from "pdfjs-dist";
 import PageCanvas from "./Page.vue";
 import TopPanel from "./TopPanel.vue";
+import PagePreviewPanel from "./PagePreviewPanel.vue";
 import BottomPanel from "./BottomPanel.vue";
 import _, { set } from "lodash"; // TODO: can be replaced with vueuse
 import "@shoelace-style/shoelace/dist/components/input/input.js";
+
+const showPreviewPanel = ref(true);
+
+const togglePreviewPanel = () => {
+  showPreviewPanel.value = !showPreviewPanel.value;
+};
 
 interface Position {
   clientX: number;
@@ -159,7 +186,7 @@ const refreshPageView = async () => {
   );
   _pageState.visiblePages = new Set(visiblePages);
 
-  // console.log(_pageState.current, toRaw(_pageState), "onrefresh");
+  console.log(_pageState.current, toRaw(_pageState), "onrefresh");
 };
 
 function getVisiblePages(
@@ -254,8 +281,10 @@ function setScale(value: number, cursorPosition: Position | null = null) {
     let offsetY = clientY - cTop;
 
     // Compute new scroll positions to keep cursor fixed
-    let newScrollLeft = container.scrollLeft * scaleFactor + offsetX * (scaleFactor - 1);
-    let newScrollTop = container.scrollTop * scaleFactor + offsetY * (scaleFactor - 1);
+    let newScrollLeft =
+      container.scrollLeft * scaleFactor + offsetX * (scaleFactor - 1);
+    let newScrollTop =
+      container.scrollTop * scaleFactor + offsetY * (scaleFactor - 1);
 
     // Update scale
     _pageState.scale = newScale;
@@ -383,6 +412,13 @@ watch(
   right: 0;
   padding-top: 0;
 }
+
+.content-container{
+  display: flex;
+  /* required for scrolling to work */
+  height: 100%; 
+}
+
 
 .page-container {
   box-sizing: border-box;
