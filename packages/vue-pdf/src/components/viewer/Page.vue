@@ -5,12 +5,14 @@
     :data-loaded="rendered"
   >
     <canvas ref="canvasRef" class="page-canvas"></canvas>
+    <PageText v-if="!isThumbnail" :pageProxy="_pageProxy" :scale="scale" :rendered="rendered" />
   </div>
 </template>
 
 <script setup lang="ts">
 import { PDFPageProxy } from "pdfjs-dist";
 import { onMounted, ref, watch, toRaw, onUnmounted, computed } from "vue";
+import PageText from "./PageText.vue";
 
 const props = defineProps({
   pageNumber: { type: Number, required: true },
@@ -99,9 +101,6 @@ function initializeCanvas() {
     ? (100 / _size.value.width) * _size.value.height
     : _size.value.height;
 
-  if (props.isThumbnail) {
-    console.log("di", width, height);
-  }
 
   containerRef.value!.style.width = `${width}px`;
   containerRef.value!.style.height = `${height}px`;
@@ -202,6 +201,7 @@ function clearCanvas() {
 
 <style scoped>
 .page-view {
+  position: relative;
   margin: 10px;
   box-shadow: 0 0 10px rgba(0, 0, 0, 0.75);
 }

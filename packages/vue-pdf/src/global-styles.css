@@ -1,0 +1,10 @@
+.page-text span {
+  cursor: text;
+  position: absolute;
+  white-space: pre;
+  color: transparent;
+  transform-origin: 0% 0%;
+}
+.page-text ::selection {
+  background: rgba(104, 104, 128, 1);
+}

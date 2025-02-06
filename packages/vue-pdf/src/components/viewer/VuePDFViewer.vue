@@ -186,7 +186,7 @@ const refreshPageView = async () => {
   );
   _pageState.visiblePages = new Set(visiblePages);
 
-  console.log(_pageState.current, toRaw(_pageState), "onrefresh");
+  // console.log(_pageState.current, toRaw(_pageState), "onrefresh");
 };
 
 function getVisiblePages(
